@@ -12,6 +12,7 @@ using System.Windows.Controls.Primitives;
 using Dynamo.Controls;
 using Dynamo.Logging;
 using Dynamo.Notifications.View;
+using DynamoUtilities;
 using Dynamo.ViewModels;
 using Dynamo.Wpf.ViewModels.Core;
 using Newtonsoft.Json;
@@ -48,7 +49,7 @@ namespace Dynamo.Notifications
         }
     }
 
-    public class NotificationCenterController
+    public class NotificationCenterController : IDisposable
     {
         private readonly NotificationUI notificationUIPopup;
         private readonly DynamoView dynamoView;
@@ -63,6 +64,8 @@ namespace Dynamo.Notifications
         private static readonly string jsEmbeddedFile = "Dynamo.Notifications.Packages.NotificationCenter.build.index.bundle.js";
         private static readonly string NotificationCenterButtonName = "notificationsButton";
         internal DirectoryInfo webBrowserUserDataFolder;
+
+        internal AsyncMethodState initState = AsyncMethodState.NotStarted;
 
         private readonly DynamoLogger logger;
         private string jsonStringFile;
@@ -97,9 +100,9 @@ namespace Dynamo.Notifications
 
             // If user turns on the feature, they will need to restart Dynamo to see the count
             // This ensures no network traffic when Notification center feature is turned off
-            if (dynamoViewModel.PreferenceSettings.EnableNotificationCenter && !dynamoViewModel.Model.NoNetworkMode ) 
-            {               
-                InitializeBrowserAsync();
+            if (dynamoViewModel.PreferenceSettings.EnableNotificationCenter && !dynamoViewModel.Model.NoNetworkMode )
+            {
+                notificationUIPopup.webView.Loaded += InitializeBrowserAsync;
                 RequestNotifications();
             }   
         }
@@ -131,7 +134,8 @@ namespace Dynamo.Notifications
             }
         }
 
-        private void InitializeBrowserAsync()
+        private async void InitializeBrowserAsync(object sender, RoutedEventArgs e)
+
         {
             if (webBrowserUserDataFolder != null)
             {
@@ -142,7 +146,10 @@ namespace Dynamo.Notifications
                 };
             }               
             notificationUIPopup.webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
-            notificationUIPopup.webView.EnsureCoreWebView2Async();        
+
+            initState = AsyncMethodState.Started;
+            await notificationUIPopup.webView.EnsureCoreWebView2Async();
+            initState = AsyncMethodState.Done;
         }
 
         private void WebView_NavigationCompleted(object sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs e)
@@ -327,6 +334,50 @@ namespace Dynamo.Notifications
             else {
                 InvokeJS(@"window.RequestNotifications('" + DynamoUtilities.PathHelper.GetServiceBackendAddress(this, "notificationAddress") + "');");
             }
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (dynamoView != null)
+            {
+                dynamoView.SizeChanged -= DynamoView_SizeChanged;
+                dynamoView.LocationChanged -= DynamoView_LocationChanged;
+                dynamoView.PreviewMouseDown -= DynamoView_PreviewMouseDown;
+            }
+
+            if (notificationUIPopup != null)
+            {
+                notificationUIPopup.IsOpen = false;
+                notificationsButton.Click -= NotificationsButton_Click;
+
+                if (notificationUIPopup.webView != null)
+                {
+                    notificationUIPopup.webView.Visibility = Visibility.Hidden;
+                    notificationUIPopup.webView.Loaded -= InitializeBrowserAsync;
+                    notificationUIPopup.webView.NavigationCompleted -= WebView_NavigationCompleted;
+                    notificationUIPopup.webView.CoreWebView2InitializationCompleted -= WebView_CoreWebView2InitializationCompleted;
+
+                    if (notificationUIPopup.webView.CoreWebView2 != null)
+                    {
+                        notificationUIPopup.webView.CoreWebView2.Stop();
+                        notificationUIPopup.webView.CoreWebView2.NewWindowRequested -= WebView_NewWindowRequested;
+                    }
+                    notificationUIPopup.webView.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dispose function for DocumentationBrowser
+        /// </summary>
+        public void Dispose()
+        {
+            if (initState == AsyncMethodState.Started)
+            {
+                logger?.Log("NotificationCenterController is being disposed but async initialization is still not done");
+            }
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
     }
 }
