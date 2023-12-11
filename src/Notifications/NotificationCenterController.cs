@@ -19,6 +19,7 @@ using Newtonsoft.Json;
 using Microsoft.Web.WebView2.Wpf;
 using Dynamo.Utilities;
 using Dynamo.Configuration;
+using HelixToolkit.Wpf;
 
 namespace Dynamo.Notifications
 {
@@ -292,8 +293,13 @@ namespace Dynamo.Notifications
         /// <param name="e"></param>
         private void DynamoView_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            string popUpBellID = "FontAwesome5.FontAwesome";
             if (!notificationUIPopup.IsOpen) return;
-            notificationUIPopup.IsOpen = false;
+            if(e.OriginalSource.ToString() != popUpBellID)
+            {
+                notificationUIPopup.IsOpen = false;
+            }
+            
         }
 
         /// <summary>
